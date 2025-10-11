@@ -2,23 +2,52 @@ const express = require("express");
 const router = express.Router();
 const pool = require("../db/db");
 const auth = require("../middlewares/auth");
+const fetch = (...args) =>
+  import("node-fetch").then(({ default: fetch }) => fetch(...args));
 
 router.post("/addtrendyword", auth, async (req, res) => {
   const userId = req.user.id;
   const { trendy_word, alter_word } = req.body;
 
-  if (!trendy_word.trim())
+  if (!trendy_word?.trim()) {
     return res.status(400).json({ error: "Enter the word" });
-  if (!alter_word.trim())
+  }
+  if (!alter_word?.trim()) {
     return res.status(400).json({ error: "Enter the meaning" });
+  }
 
   try {
+    const response = await fetch(`${process.env.ML_URL}/analyze`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ text: trendy_word }),
+    });
+
+    if (!response.ok) {
+      throw new Error(`AI API error: ${response.statusText}`);
+    }
+
+    const aiData = await response.json();
+    const isToxic = aiData.is_toxic ?? false;
+    const toxicScore = aiData.toxic_score ?? 0;
+
+    if (isToxic) {
+      return res.status(400).json({
+        error: `Word flagged as inappropriate (Toxicity score: ${toxicScore.toFixed(
+          2
+        )})`,
+      });
+    }
+
     const words = await pool.query(
-      `INSERT INTO trendyWords (trendy_word, alter_word)
-       VALUES ($1, $2)
-       ON CONFLICT (trendy_word) DO UPDATE SET alter_word = EXCLUDED.alter_word
+      `INSERT INTO trendyWords (trendy_word, alter_word, is_toxic, toxic_score)
+       VALUES ($1, $2, $3, $4)
+       ON CONFLICT (trendy_word)
+       DO UPDATE SET alter_word = EXCLUDED.alter_word,
+                     is_toxic = EXCLUDED.is_toxic,
+                     toxic_score = EXCLUDED.toxic_score
        RETURNING id, trendy_word`,
-      [trendy_word.toLowerCase(), alter_word.toLowerCase()]
+      [trendy_word.toLowerCase(), alter_word.toLowerCase(), isToxic, toxicScore]
     );
 
     const { id: trendyId, trendy_word: word } = words.rows[0];
@@ -30,12 +59,12 @@ router.post("/addtrendyword", auth, async (req, res) => {
       [userId, trendyId]
     );
 
-    const result = await pool.query(
+    const usersToNotify = await pool.query(
       "SELECT id FROM users WHERE id <> $1 AND notifications_enabled = true",
       [userId]
     );
 
-    for (const row of result.rows) {
+    for (const row of usersToNotify.rows) {
       try {
         const socketId = req.connectedUsers[row.id];
         if (socketId) {
@@ -53,18 +82,19 @@ router.post("/addtrendyword", auth, async (req, res) => {
           [row.id, `New trendy word added: ${word}`, data]
         );
       } catch (err) {
-        console.error(`Failed to notify user ${row.id}:`, err.message);
+        console.error(`⚠️ Failed to notify user ${row.id}:`, err.message);
       }
     }
 
     res.json({
-      message: "✅ Word added successfully",
+      message: "Word added successfully",
       trendy_word: word,
       trendyId,
+      toxic_score: toxicScore,
     });
   } catch (err) {
     console.error("Error in addtrendyword route:", err.message);
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: "Internal server error" });
   }
 });
 
