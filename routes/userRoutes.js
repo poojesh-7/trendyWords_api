@@ -25,8 +25,8 @@ router.post("/register", registerValidator, validate, async (req, res) => {
       hash = await bcrypt.hash(password, 8);
     }
     const users = await pool.query(
-      "insert into users(name,email,password) values ($1,$2,$3) returning *",
-      [name, email, hash]
+      "insert into users(name,email,password,notifications_enabled) values ($1,$2,$3,$4) returning *",
+      [name, email, hash, true]
     );
     const user = users.rows[0];
     const token = await generateAuth(user.id);
