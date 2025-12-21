@@ -2,7 +2,9 @@ const pool = require("../db/db");
 const fetch = (...args) =>
   import("node-fetch").then(({ default: fetch }) => fetch(...args));
 
-exports.addTrendyWord = async (userId, body, io, connectedUsers) => {
+const { publishToQueue, QUEUE_NAME } = require("../config/rabbitmq");
+
+exports.addTrendyWord = async (userId, body) => {
   const { trendy_word, alter_word } = body;
 
   if (!trendy_word?.trim()) throw new Error("Enter the word");
@@ -23,10 +25,7 @@ exports.addTrendyWord = async (userId, body, io, connectedUsers) => {
   const toxicScore = aiData.toxic_score ?? 0;
 
   if (isToxic) {
-    throw new Error(
-      // `Word flagged as inappropriate (Toxicity score: ${toxicScore.toFixed(2)})`
-      `Word flagged as inappropriate `
-    );
+    throw new Error("Word flagged as inappropriate");
   }
 
   const words = await pool.query(
@@ -49,33 +48,16 @@ exports.addTrendyWord = async (userId, body, io, connectedUsers) => {
     [userId, trendyId]
   );
 
-  const usersToNotify = await pool.query(
-    "SELECT id FROM users WHERE id <> $1 AND notifications_enabled = true",
-    [userId]
-  );
-
-  for (const row of usersToNotify.rows) {
-    try {
-      const socketId = connectedUsers[row.id];
-      if (socketId) {
-        io.to(socketId).emit("newWordNotification", {
-          trendy_word: word,
-          addedBy: userId,
-        });
-      }
-
-      await pool.query(
-        `INSERT INTO notifications (user_id, message, type, data)
-         VALUES ($1, $2, 'new_word', $3::jsonb)`,
-        [
-          row.id,
-          `New trendy word added: ${word}`,
-          { trendyId, addedBy: userId },
-        ]
-      );
-    } catch (err) {
-      console.error(`⚠️ Failed to notify user ${row.id}:`, err.message);
-    }
+  try {
+    publishToQueue(QUEUE_NAME, {
+      type: "NEW_TRENDY_WORD",
+      trendyId,
+      trendy_word: word,
+      addedBy: userId,
+      createdAt: new Date(),
+    });
+  } catch (err) {
+    console.error("Failed to publish notification event:", err.message);
   }
 
   return {

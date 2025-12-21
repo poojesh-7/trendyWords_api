@@ -1,3 +1,8 @@
+require("./config/redis");
+const redis = require("./config/redis");
+const { connectRabbitMQ } = require("./config/rabbitmq");
+connectRabbitMQ();
+
 const express = require("express");
 const http = require("http");
 const { Server } = require("socket.io");
@@ -7,8 +12,10 @@ const userRouter = require("./routes/userRoutes");
 const trendyRouter = require("./routes/trendyRoutes");
 const wordRouter = require("./routes/wordsRoutes");
 const notificationRouter = require("./routes/notificationRoutes");
+
 const app = express();
 const server = http.createServer(app);
+
 const io = new Server(server, {
   cors: { origin: "*" },
 });
@@ -28,17 +35,31 @@ io.on("connection", (socket) => {
 
   socket.on("disconnect", () => {
     for (const [id, socketId] of Object.entries(connectedUsers)) {
-      if (socketId === socket.id) delete connectedUsers[id];
+      if (socketId === socket.id) {
+        delete connectedUsers[id];
+        break;
+      }
     }
     console.log("User disconnected:", socket.id);
   });
 });
 
-app.use((req, res, next) => {
-  req.io = io;
-  req.connectedUsers = connectedUsers;
-  next();
-});
+const subscriber = redis.duplicate();
+
+(async () => {
+  await subscriber.connect();
+
+  await subscriber.subscribe("socket_notifications", (message) => {
+    const { receiverId, payload } = JSON.parse(message);
+
+    const socketId = connectedUsers[receiverId];
+    if (socketId) {
+      io.to(socketId).emit(payload.event, payload.data);
+    }
+  });
+
+  console.log("Redis subscriber listening for socket events");
+})();
 
 app.use(userRouter);
 app.use(trendyRouter);
@@ -46,5 +67,5 @@ app.use(wordRouter);
 app.use(notificationRouter);
 
 server.listen(PORT, () => {
-  console.log(`Server running on port: ${PORT}`);
+  console.log(`🚀 Server running on port ${PORT}`);
 });
