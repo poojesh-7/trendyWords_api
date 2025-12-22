@@ -1,33 +1,47 @@
 const { createClient } = require("redis");
 
-const redisClient = createClient({
-  socket: {
-    host: process.env.REDIS_HOST,
-    port: Number(process.env.REDIS_PORT),
-  },
-});
+const redisClient = createClient(
+  process.env.REDIS_URL
+    ? { url: process.env.REDIS_URL }
+    : {
+        socket: {
+          host: process.env.REDIS_HOST,
+          port: Number(process.env.REDIS_PORT),
+        },
+      }
+);
 
 redisClient.on("connect", () => {
   console.log("Redis connected");
 });
 
-redisClient.on("error", (err) => {
-  console.error("Redis error:", err);
+redisClient.on("reconnecting", () => {
+  console.log("Redis reconnecting...");
 });
 
-let isConnected = false;
+redisClient.on("error", (err) => {
+  console.error("Redis error:", err.message);
+});
+
+let connecting;
 
 const connectRedis = async () => {
-  if (isConnected) return;
+  if (redisClient.isOpen) return;
 
-  try {
-    await redisClient.connect();
-    isConnected = true;
-  } catch (err) {
-    console.error("Failed to connect Redis:", err.message);
+  if (!connecting) {
+    connecting = redisClient.connect();
   }
+
+  await connecting;
 };
 
 connectRedis();
+
+process.on("SIGTERM", async () => {
+  try {
+    await redisClient.quit();
+  } catch (e) {}
+  process.exit(0);
+});
 
 module.exports = redisClient;

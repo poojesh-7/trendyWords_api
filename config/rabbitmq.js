@@ -33,7 +33,6 @@ const _connect = async () => {
 
     channel = await connection.createChannel();
 
-    // Always assert queue (safe & idempotent)
     await channel.assertQueue(QUEUE_NAME, { durable: true });
 
     channel.prefetch(1);
@@ -66,12 +65,11 @@ const consumeQueue = async (queue, callback) => {
       channel.ack(msg);
     } catch (err) {
       console.error("Message processing failed:", err.message);
-      channel.nack(msg, false, false); // DLQ later
+      channel.nack(msg, false, false);
     }
   });
 };
 
-/* 🔴 Graceful shutdown (Docker, PM2, Ctrl+C) */
 process.on("SIGTERM", async () => {
   console.log("SIGTERM received. Closing RabbitMQ...");
   try {
