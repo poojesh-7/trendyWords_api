@@ -1,64 +1,63 @@
 const amqp = require("amqplib");
 
 const QUEUE_NAME = "notifications";
+const RABBITMQ_URL = process.env.RABBITMQ_URL;
 
 let connection;
 let channel;
-let isConnecting = false;
+let connecting;
 
 const connectRabbitMQ = async () => {
-  if (channel || isConnecting) return;
+  if (channel) return;
+  if (!connecting) {
+    connecting = _connect();
+  }
+  await connecting;
+};
 
-  isConnecting = true;
-
+const _connect = async () => {
   try {
-    connection = await amqp.connect(process.env.RABBITMQ_URL);
+    connection = await amqp.connect(RABBITMQ_URL);
 
     connection.on("error", (err) => {
-      console.error("RabbitMQ connection error:", err.message);
-      channel = null;
+      console.error("RabbitMQ error:", err.message);
     });
 
     connection.on("close", () => {
-      console.error("RabbitMQ connection closed");
+      console.error("RabbitMQ connection closed. Reconnecting...");
       channel = null;
+      connection = null;
+      connecting = null;
+      setTimeout(connectRabbitMQ, 5000);
     });
 
     channel = await connection.createChannel();
 
+    // Always assert queue (safe & idempotent)
     await channel.assertQueue(QUEUE_NAME, { durable: true });
 
     channel.prefetch(1);
 
     console.log("RabbitMQ connected");
-  } catch (error) {
-    isConnecting = false;
-    console.error("RabbitMQ connection error:", error.message);
+  } catch (err) {
+    console.error("RabbitMQ connection failed:", err.message);
+    connecting = null;
+    setTimeout(connectRabbitMQ, 5000);
   }
 };
 
-const publishToQueue = (queue, message) => {
-  if (!channel) {
-    console.error("RabbitMQ channel not ready, skipping publish");
-    return;
-  }
+const publishToQueue = async (queue, message) => {
+  await connectRabbitMQ();
 
-  try {
-    channel.sendToQueue(queue, Buffer.from(JSON.stringify(message)), {
-      persistent: true,
-    });
-  } catch (err) {
-    console.error("Failed to publish message:", err.message);
-  }
+  channel.sendToQueue(queue, Buffer.from(JSON.stringify(message)), {
+    persistent: true,
+  });
 };
 
 const consumeQueue = async (queue, callback) => {
-  if (!channel) {
-    console.error("RabbitMQ channel not ready, cannot consume");
-    return;
-  }
+  await connectRabbitMQ();
 
-  await channel.consume(queue, async (msg) => {
+  channel.consume(queue, async (msg) => {
     if (!msg) return;
 
     try {
@@ -67,10 +66,27 @@ const consumeQueue = async (queue, callback) => {
       channel.ack(msg);
     } catch (err) {
       console.error("Message processing failed:", err.message);
-      channel.nack(msg, false, false);
+      channel.nack(msg, false, false); // DLQ later
     }
   });
 };
+
+/* 🔴 Graceful shutdown (Docker, PM2, Ctrl+C) */
+process.on("SIGTERM", async () => {
+  console.log("SIGTERM received. Closing RabbitMQ...");
+  try {
+    if (channel) await channel.close();
+    if (connection) await connection.close();
+  } catch (err) {
+    console.error("Shutdown error:", err.message);
+  } finally {
+    process.exit(0);
+  }
+});
+
+process.on("SIGINT", async () => {
+  process.emit("SIGTERM");
+});
 
 module.exports = {
   connectRabbitMQ,
