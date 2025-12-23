@@ -46,20 +46,29 @@ io.on("connection", (socket) => {
 
 const subscriber = redis.duplicate();
 
-(async () => {
-  await subscriber.connect();
-
-  await subscriber.subscribe("socket_notifications", (message) => {
-    const { receiverId, payload } = JSON.parse(message);
-
-    const socketId = connectedUsers[receiverId];
-    if (socketId) {
-      io.to(socketId).emit(payload.event, payload.data);
+const startSubscriber = async () => {
+  try {
+    if (!subscriber.isOpen) {
+      await subscriber.connect();
     }
-  });
 
-  console.log("Redis subscriber listening for socket events");
-})();
+    await subscriber.subscribe("socket_notifications", (message) => {
+      const { receiverId, payload } = JSON.parse(message);
+
+      const socketId = connectedUsers[receiverId];
+      if (socketId) {
+        io.to(socketId).emit(payload.event, payload.data);
+      }
+    });
+
+    console.log("Redis subscriber listening for socket events");
+  } catch (err) {
+    console.error("Redis subscriber error:", err.message);
+    setTimeout(startSubscriber, 5000); // retry
+  }
+};
+
+startSubscriber();
 
 app.use(userRouter);
 app.use(trendyRouter);
