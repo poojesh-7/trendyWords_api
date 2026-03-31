@@ -12,6 +12,7 @@ const userRouter = require("./routes/userRoutes");
 const trendyRouter = require("./routes/trendyRoutes");
 const wordRouter = require("./routes/wordsRoutes");
 const notificationRouter = require("./routes/notificationRoutes");
+const adminRoutes = require("./admin/adminRoutes");
 
 const app = express();
 const server = http.createServer(app);
@@ -74,6 +75,7 @@ app.use(userRouter);
 app.use(trendyRouter);
 app.use(wordRouter);
 app.use(notificationRouter);
+app.use("/api/admin", adminRoutes);
 
 server.listen(PORT, () => {
   console.log(`🚀 Server running on port ${PORT}`);
