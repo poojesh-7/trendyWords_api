@@ -11,6 +11,7 @@ const {
 const PORT = process.env.PORT || 3000;
 
 const startWorker = async () => {
+  console.log("worker . . . . . . . . .");
   try {
     await connectRabbitMQ();
 
@@ -21,7 +22,7 @@ const startWorker = async () => {
 
       const usersToNotify = await pool.query(
         "SELECT id FROM users WHERE id <> $1 AND notifications_enabled = true",
-        [addedBy]
+        [addedBy],
       );
 
       await Promise.all(
@@ -29,12 +30,13 @@ const startWorker = async () => {
           try {
             await pool.query(
               `INSERT INTO notifications (user_id, message, type, data)
-               VALUES ($1, $2, 'new_word', $3::jsonb)`,
+   VALUES ($1, $2, 'new_word', $3::jsonb)
+   ON CONFLICT DO NOTHING`,
               [
                 row.id,
                 `New trendy word added: ${trendy_word}`,
                 { trendyId, addedBy },
-              ]
+              ],
             );
 
             await redis.publish(
@@ -45,12 +47,12 @@ const startWorker = async () => {
                   event: "newWordNotification",
                   data: { trendy_word, addedBy },
                 },
-              })
+              }),
             );
           } catch (err) {
             console.error(`Failed to notify user ${row.id}:`, err.message);
           }
-        })
+        }),
       );
     });
 
