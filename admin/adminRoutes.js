@@ -69,6 +69,64 @@ router.get("/users", auth, adminAuth, async (req, res) => {
   }
 });
 
+// GET /api/admin/word-insights
+router.get("/word-insights", auth, adminAuth, async (req, res) => {
+  try {
+    const result = await pool.query(`
+      SELECT 
+        tw.id,
+        tw.trendy_word,
+        COUNT(uw.user_id) AS usage_count,
+        COUNT(DISTINCT uw.user_id) AS unique_users,
+        MAX(tw.toxic_score) AS toxic_score
+      FROM trendyWords tw
+      LEFT JOIN user_words uw ON tw.id = uw.trendy_id
+      GROUP BY tw.id
+      ORDER BY usage_count DESC
+      LIMIT 20
+    `);
+
+    res.json(result.rows);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// GET /api/admin/user-activity
+router.get("/user-activity", auth, adminAuth, async (req, res) => {
+  try {
+    const result = await pool.query(`
+      SELECT user_id, COUNT(*) as contributions
+      FROM user_words
+      GROUP BY user_id
+      ORDER BY contributions DESC
+      LIMIT 10
+    `);
+
+    res.json(result.rows);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// GET /api/admin/trends-over-time
+router.get("/trends-over-time", auth, adminAuth, async (req, res) => {
+  try {
+    const result = await pool.query(`
+      SELECT 
+        DATE(created_at) as date,
+        COUNT(*) as count
+      FROM user_words
+      GROUP BY DATE(created_at)
+      ORDER BY date ASC
+    `);
+
+    res.json(result.rows);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // DELETE /api/admin/word/:id
 router.delete("/word/:id", auth, adminAuth, async (req, res) => {
   try {
