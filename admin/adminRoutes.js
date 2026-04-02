@@ -41,6 +41,22 @@ router.get("/trends", auth, adminAuth, async (req, res) => {
   }
 });
 
+// GET /api/admin/words
+router.get("/words", auth, adminAuth, async (req, res) => {
+  try {
+    const words = await pool.query(`
+      SELECT id, trendy_word, toxic_score
+      FROM trendyWords
+      ORDER BY id DESC
+      LIMIT 50
+    `);
+
+    res.json(words.rows);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // GET /api/admin/users
 router.get("/users", auth, adminAuth, async (req, res) => {
   try {
