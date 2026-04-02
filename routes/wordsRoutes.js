@@ -10,7 +10,7 @@ router.get("/global/trends", async (req, res) => {
     const trends = await pool.query(`
       SELECT tw.trendy_word, COUNT(*) as frequency
       FROM user_words uw
-      JOIN trendyWords tw ON uw.trendy_id = tw.id
+      JOIN trendywords tw ON uw.trendy_id = tw.id
       GROUP BY tw.trendy_word
       ORDER BY frequency DESC
       LIMIT 10
