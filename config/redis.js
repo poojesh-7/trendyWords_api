@@ -26,13 +26,11 @@ const connectRedis = async () => {
   if (redisClient.isOpen) return;
 
   if (!connecting) {
-    connecting = redisClient
-      .connect()
-      .catch((err) => {
-        console.error("Initial Redis connection failed:", err.message);
-        connecting = null;
-        setTimeout(connectRedis, 5000); // retry
-      });
+    connecting = redisClient.connect().catch((err) => {
+      console.error("Initial Redis connection failed:", err.message);
+      connecting = null;
+      setTimeout(connectRedis, 5000); // retry
+    });
   }
 
   await connecting;

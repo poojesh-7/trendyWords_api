@@ -36,7 +36,7 @@ exports.addTrendyWord = async (userId, body) => {
                    is_toxic = EXCLUDED.is_toxic,
                    toxic_score = EXCLUDED.toxic_score
      RETURNING id, trendy_word`,
-    [trendy_word.toLowerCase(), alter_word.toLowerCase(), isToxic, toxicScore]
+    [trendy_word.toLowerCase(), alter_word.toLowerCase(), isToxic, toxicScore],
   );
 
   const { id: trendyId, trendy_word: word } = words.rows[0];
@@ -45,10 +45,11 @@ exports.addTrendyWord = async (userId, body) => {
     `INSERT INTO user_words (user_id, trendy_id)
      VALUES ($1, $2)
      ON CONFLICT DO NOTHING`,
-    [userId, trendyId]
+    [userId, trendyId],
   );
 
   try {
+    console.log("publishing");
     publishToQueue(QUEUE_NAME, {
       type: "NEW_TRENDY_WORD",
       trendyId,
@@ -75,7 +76,7 @@ exports.getMyWords = async (userId) => {
      JOIN trendyWords tw ON uw.trendy_id = tw.id
      WHERE uw.user_id = $1
      ORDER BY tw.id ASC`,
-    [userId]
+    [userId],
   );
 
   return result.rows;
@@ -84,6 +85,6 @@ exports.getMyWords = async (userId) => {
 exports.removeTrendyWord = async (userId, trendyId) => {
   await pool.query(
     "DELETE FROM user_words WHERE user_id = $1 AND trendy_id = $2",
-    [userId, trendyId]
+    [userId, trendyId],
   );
 };
