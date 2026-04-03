@@ -1,7 +1,7 @@
 const express = require("express");
 const router = express.Router();
 const trendyController = require("../controllers/wordsControllers");
-
+const pool = require("../db/db");
 router.get("/view/allwords", trendyController.getAllWords);
 router.get("/view/word/:id", trendyController.getWordById);
 // GET /api/global/trends
@@ -15,9 +15,9 @@ router.get("/global/trends", async (req, res) => {
       ORDER BY frequency DESC
       LIMIT 10
     `);
-
     res.json(trends.rows);
   } catch (err) {
+    console.log(err, "Global");
     res.status(500).json({ error: err.message });
   }
 });
